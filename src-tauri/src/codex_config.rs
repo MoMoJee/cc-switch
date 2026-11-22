@@ -2826,6 +2826,8 @@ pub(crate) fn plan_codex_stack_catalog(
         }
     };
     for member in stack {
+        let agentbridge_search = member.key == crate::mode::stack::CODEX_AGENTBRIDGE_KEY
+            && member.row.profile == CodexCatalogToolProfile::NativeResponses;
         for mut entry in codex_stack_third_party_rows(&member.row)? {
             let Some(obj) = entry.as_object_mut() else {
                 continue;
@@ -2848,6 +2850,10 @@ pub(crate) fn plan_codex_stack_catalog(
                     false,
                 )),
             );
+            // Codex offers standalone web search for Lite models without a global feature flag.
+            if agentbridge_search {
+                obj.insert("use_responses_lite".to_string(), Value::Bool(true));
+            }
             obj.insert(
                 "display_name".to_string(),
                 json!(crate::mode::stack::display_name(
@@ -6435,6 +6441,40 @@ wire_api = "responses"
         }
         assert!(models[2].get("tool_mode").is_none());
         assert_eq!(models[2]["comp_hash"], "cc-switch");
+    }
+
+    #[test]
+    fn stacked_agentbridge_models_offer_standalone_search_through_responses_lite() {
+        let settings = json!({ "modelCatalog": { "models": [{ "model": "gpt-6.2-sol" }] } });
+        let native_row = || CodexCatalogRow {
+            settings: &settings,
+            config_text: "model = \"gpt-6.2-sol\"\n",
+            profile: CodexCatalogToolProfile::NativeResponses,
+        };
+        let catalog = plan_codex_stack_catalog(
+            CodexStackRoute::ThirdParty(native_row()),
+            &[
+                CodexStackCatalogMember {
+                    key: "agentbridge",
+                    provider_name: "AgentBridge",
+                    row: native_row(),
+                },
+                CodexStackCatalogMember {
+                    key: "other",
+                    provider_name: "Other",
+                    row: native_row(),
+                },
+            ],
+            false,
+        )
+        .expect("catalog");
+        let models = catalog["models"].as_array().unwrap();
+        assert_eq!(models[0]["slug"], "gpt-6.2-sol");
+        assert_ne!(models[0]["use_responses_lite"], true);
+        assert_eq!(models[1]["slug"], "ccs-agentbridge/gpt-6.2-sol");
+        assert_eq!(models[1]["use_responses_lite"], true);
+        assert_eq!(models[2]["slug"], "ccs-other/gpt-6.2-sol");
+        assert_ne!(models[2]["use_responses_lite"], true);
     }
 
     #[test]
