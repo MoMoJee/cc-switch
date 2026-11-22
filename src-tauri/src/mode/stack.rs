@@ -36,7 +36,6 @@ const CLAUDE_PREFIX: &str = "ccs-claude-";
 const CLAUDE_SEPARATOR: &str = "--";
 /// Codex 的 Stack 模型 id：`ccs-<key>/<model>`。
 const CODEX_PREFIX: &str = "ccs-";
-pub(crate) const CODEX_AGENTBRIDGE_KEY: &str = "agentbridge";
 const CODEX_SEPARATOR: char = '/';
 /// Claude Desktop 的 Stack 模型 id：`claude-fable-ccs-<6 位数字>`（[`desktop_code`]）。Desktop 的
 /// 选择器只收含 `claude` 等字样、又不含厂商名（kimi、glm、seed- 等一长串黑名单）的 id，所以 id

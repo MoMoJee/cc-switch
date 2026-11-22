@@ -1460,23 +1460,7 @@ async fn handle_codex_standalone_passthrough(
         .map_err(|e| ProxyError::InvalidRequest(format!("Failed to parse request body: {e}")))?;
     drop(body_bytes);
 
-    // Only AgentBridge opts in to Stack routing for standalone search.
-    let stack = if canonical_endpoint == "/alpha/search"
-        && body
-            .get("model")
-            .and_then(Value::as_str)
-            .is_some_and(|model| {
-                use crate::mode::stack::{self, Decoded, CODEX_AGENTBRIDGE_KEY};
-                matches!(
-                    stack::decode(&AppType::Codex, model),
-                    Decoded::Stack {
-                        key: CODEX_AGENTBRIDGE_KEY,
-                        ..
-                    }
-                )
-            })
-        && crate::mode::stack::stack_mode_now(&AppType::Codex)
-    {
+    let stack = if canonical_endpoint == "/alpha/search" {
         match resolve_stack_target(&state, &AppType::Codex, &mut body) {
             Ok(stack) => stack,
             Err(rejected) => return Ok(*rejected),

@@ -1443,7 +1443,7 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\
         }
         let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
         let mock_app = Router::new().route(
-            "/v1/alpha/search",
+            "/*path",
             post({
                 let captured = captured.clone();
                 move |request: axum::extract::Request| {
@@ -1466,6 +1466,14 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\
                                 .map(ToString::to_string),
                             body: serde_json::from_slice(&body).expect("parse mock request body"),
                         });
+
+                        if parts.uri.path() == "/other/v1/alpha/search" {
+                            return (
+                                StatusCode::NOT_FOUND,
+                                HeaderMap::new(),
+                                r#"{"error":{"message":"Search endpoint unavailable"}}"#,
+                            );
+                        }
 
                         let mut headers = HeaderMap::new();
                         headers.insert(
@@ -1604,12 +1612,15 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\
         use crate::live::engine::DeviceStore;
         use crate::mode::state::{self, Mode};
 
-        for (id, secret) in [("agentbridge", "bridge-secret"), ("other", "other-secret")] {
+        for (id, base_path, secret) in [
+            ("agentbridge", "/v1", "bridge-secret"),
+            ("other", "/other/v1", "other-secret"),
+        ] {
             let provider = Provider::with_id(
                 id.to_string(),
                 id.to_string(),
                 json!({
-                    "base_url": format!("http://{mock_addr}/v1"),
+                    "base_url": format!("http://{mock_addr}{base_path}"),
                     "auth": {"OPENAI_API_KEY": secret}
                 }),
                 None,
@@ -1633,16 +1644,26 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\
             (
                 "ccs-agentbridge/gpt-6.2-sol",
                 "gpt-6.2-sol",
+                "/v1/alpha/search",
                 "bridge-secret",
+                StatusCode::ACCEPTED,
             ),
             (
                 "ccs-other/other-model",
-                "ccs-other/other-model",
-                "upstream-secret",
+                "other-model",
+                "/other/v1/alpha/search",
+                "other-secret",
+                StatusCode::NOT_FOUND,
             ),
-            ("gpt-5.6-sol", "gpt-5.6-sol", "upstream-secret"),
+            (
+                "gpt-5.6-sol",
+                "gpt-5.6-sol",
+                "/v1/alpha/search",
+                "upstream-secret",
+                StatusCode::ACCEPTED,
+            ),
         ];
-        for (model, _, _) in stack_cases {
+        for (model, _, _, _, expected_status) in stack_cases {
             let response = client
                 .post(format!(
                     "http://127.0.0.1:{}/v1/alpha/search",
@@ -1653,7 +1674,7 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\
                 .send()
                 .await
                 .expect("send Stack alpha search request");
-            assert_eq!(response.status(), StatusCode::ACCEPTED, "model {model}");
+            assert_eq!(response.status(), expected_status, "model {model}");
         }
 
         proxy.stop().await.expect("stop test proxy");
@@ -1661,8 +1682,10 @@ data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\
 
         let captured = captured.lock().await;
         assert_eq!(captured.len(), aliases.len() + 1 + stack_cases.len());
-        for (request, (_, model, secret)) in captured[aliases.len() + 1..].iter().zip(stack_cases) {
-            assert_eq!(request.path_and_query, "/v1/alpha/search");
+        for (request, (_, model, path, secret, _)) in
+            captured[aliases.len() + 1..].iter().zip(stack_cases)
+        {
+            assert_eq!(request.path_and_query, path);
             assert_eq!(
                 request.authorization.as_deref(),
                 Some(format!("Bearer {secret}").as_str())
